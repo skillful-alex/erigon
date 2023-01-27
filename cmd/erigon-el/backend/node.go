@@ -1,7 +1,6 @@
 package backend
 
 import (
-	"github.com/ledgerwatch/erigon-lib/kv"
 	"github.com/ledgerwatch/log/v3"
 	"github.com/urfave/cli/v2"
 
@@ -37,15 +36,6 @@ func (eri *ErigonNode) run() {
 	// we don't have accounts locally and we don't do mining
 	// so these parts are ignored
 	// see cmd/geth/daemon.go#startNode for full implementation
-}
-
-// Params contains optional parameters for creating a node.
-// * GitCommit is a commit from which then node was built.
-// * CustomBuckets is a `map[string]dbutils.TableCfgItem`, that contains bucket name and its properties.
-//
-// NB: You have to declare your custom buckets here to be able to use them in the app.
-type Params struct {
-	CustomBuckets kv.TableCfg
 }
 
 func NewNodConfigUrfave(ctx *cli.Context) *nodecfg.Config {
@@ -94,15 +84,11 @@ func NewEthConfigUrfave(ctx *cli.Context, nodeConfig *nodecfg.Config) *ethconfig
 }
 
 // New creates a new `ErigonNode`.
-// * ctx - `*cli.Context` from the main function. Necessary to be able to configure the node based on the command-line flags
-// * sync - `stagedsync.StagedSync`, an instance of staged sync, setup just as needed.
-// * optionalParams - additional parameters for running a node.
 func NewNode(
 	nodeConfig *nodecfg.Config,
 	ethConfig *ethconfig.Config,
 	logger log.Logger,
 ) (*ErigonNode, error) {
-	//prepareBuckets(optionalParams.CustomBuckets)
 	node, err := node.New(nodeConfig)
 	if err != nil {
 		utils.Fatalf("Failed to create Erigon node: %v", err)
