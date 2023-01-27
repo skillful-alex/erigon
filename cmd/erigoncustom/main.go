@@ -1,52 +1,128 @@
+// Copy of cmd/erigon/main.go . Changes:
+// - ethNode, err := node.New(nodeCfg, ethCfg, logger)
+// + ethNode, err := NewCustomErigonNode(nodeCfg, ethCfg, logger)
+
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
 
+	"github.com/ledgerwatch/erigon-lib/common/dbg"
+	"github.com/ledgerwatch/log/v3"
+	"github.com/pelletier/go-toml"
 	"github.com/urfave/cli/v2"
+	"gopkg.in/yaml.v2"
 
+	"github.com/ledgerwatch/erigon/cmd/utils"
+	"github.com/ledgerwatch/erigon/params"
 	erigonapp "github.com/ledgerwatch/erigon/turbo/app"
 	erigoncli "github.com/ledgerwatch/erigon/turbo/cli"
+	"github.com/ledgerwatch/erigon/turbo/logging"
+	"github.com/ledgerwatch/erigon/turbo/node"
 )
 
-// defining a custom command-line flag, a string
-var flag = cli.StringFlag{
-	Name:  "custom-stage-greeting",
-	Value: "default-value",
-}
-
-// defining a custom bucket name
-const (
-	customBucketName = "ch.torquem.demo.tgcustom.CUSTOM_BUCKET" //nolint
-)
-
-// the regular main function
 func main() {
-	// initializing Erigon application here and providing our custom flag
-	app := erigonapp.MakeApp(runErigon,
-		append(erigoncli.DefaultFlags, &flag), // always use DefaultFlags, but add a new one in the end.
-	)
+	defer func() {
+		panicResult := recover()
+		if panicResult == nil {
+			return
+		}
+
+		log.Error("catch panic", "err", panicResult, "stack", dbg.Stack())
+		os.Exit(1)
+	}()
+
+	app := erigonapp.MakeApp(runErigon, erigoncli.DefaultFlags)
 	if err := app.Run(os.Args); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		_, printErr := fmt.Fprintln(os.Stderr, err)
+		if printErr != nil {
+			log.Warn("Fprintln error", "err", printErr)
+		}
 		os.Exit(1)
 	}
 }
 
-// Erigon main function
-func runErigon(ctx *cli.Context) error {
-	// running a node and initializing a custom bucket with all default settings
-	//eri := node.New(ctx, node.Params{
-	//	CustomBuckets: map[string]dbutils.BucketConfigItem{
-	//		customBucketName: {},
-	//	},
-	//})
+func runErigon(cliCtx *cli.Context) error {
+	configFilePath := cliCtx.String(utils.ConfigFlag.Name)
+	if configFilePath != "" {
+		if err := setFlagsFromConfigFile(cliCtx, configFilePath); err != nil {
+			log.Warn("failed setting config flags from yaml/toml file", "err", err)
+		}
+	}
 
-	//err := eri.Serve()
+	logger := logging.GetLoggerCtx("erigon", cliCtx)
 
-	//if err != nil {
-	//	log.Error("error while serving a Erigon node", "err", err)
-	//  return err
-	//}
+	// initializing the node and providing the current git commit there
+	logger.Info("Build info", "git_branch", params.GitBranch, "git_tag", params.GitTag, "git_commit", params.GitCommit)
+
+	nodeCfg := node.NewNodConfigUrfave(cliCtx)
+	ethCfg := node.NewEthConfigUrfave(cliCtx, nodeCfg)
+
+	ethNode, err := NewCustomErigonNode(nodeCfg, ethCfg, logger)
+	if err != nil {
+		log.Error("Erigon startup", "err", err)
+		return err
+	}
+	err = ethNode.Serve()
+	if err != nil {
+		log.Error("error while serving an Erigon node", "err", err)
+	}
+	return err
+}
+
+func setFlagsFromConfigFile(ctx *cli.Context, filePath string) error {
+	fileExtension := filepath.Ext(filePath)
+
+	fileConfig := make(map[string]interface{})
+
+	if fileExtension == ".yaml" {
+		yamlFile, err := os.ReadFile(filePath)
+		if err != nil {
+			return err
+		}
+		err = yaml.Unmarshal(yamlFile, fileConfig)
+		if err != nil {
+			return err
+		}
+	} else if fileExtension == ".toml" {
+		tomlFile, err := os.ReadFile(filePath)
+		if err != nil {
+			return err
+		}
+		err = toml.Unmarshal(tomlFile, &fileConfig)
+		if err != nil {
+			return err
+		}
+	} else {
+		return errors.New("config files only accepted are .yaml and .toml")
+	}
+	// sets global flags to value in yaml/toml file
+	for key, value := range fileConfig {
+		if !ctx.IsSet(key) {
+			if reflect.ValueOf(value).Kind() == reflect.Slice {
+				sliceInterface := value.([]interface{})
+				s := make([]string, len(sliceInterface))
+				for i, v := range sliceInterface {
+					s[i] = fmt.Sprintf("%v", v)
+				}
+				err := ctx.Set(key, strings.Join(s, ","))
+				if err != nil {
+					return fmt.Errorf("failed setting %s flag with values=%s error=%s", key, s, err)
+				}
+			} else {
+				err := ctx.Set(key, fmt.Sprintf("%v", value))
+				if err != nil {
+					return fmt.Errorf("failed setting %s flag with value=%v error=%s", key, value, err)
+
+				}
+			}
+		}
+	}
+
 	return nil
 }

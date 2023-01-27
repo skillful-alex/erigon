@@ -1089,6 +1089,20 @@ func (s *Ethereum) ChainConfig() *chain.Config {
 	return s.chainConfig
 }
 
+func (s *Ethereum) SyncUnwindOrder() stagedsync.UnwindOrder { return s.syncUnwindOrder }
+func (s *Ethereum) SyncPruneOrder() stagedsync.PruneOrder   { return s.syncPruneOrder }
+func (s *Ethereum) SyncStages() []*stagedsync.Stage         { return s.syncStages }
+
+func (s *Ethereum) SetSyncUnwindOrder(syncUnwindOrder stagedsync.UnwindOrder) {
+	s.syncUnwindOrder = syncUnwindOrder
+}
+func (s *Ethereum) SetSyncPruneOrder(syncPruneOrder stagedsync.PruneOrder) {
+	s.syncPruneOrder = syncPruneOrder
+}
+func (s *Ethereum) SetSyncStages(syncStages []*stagedsync.Stage) {
+	s.syncStages = syncStages
+}
+
 func (s *Ethereum) StagedSync() *stagedsync.Sync {
 	return s.stagedSync
 }
